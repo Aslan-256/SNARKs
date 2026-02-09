@@ -57,11 +57,11 @@ class PIOPProof:
     Contains polynomial oracles and prover responses to challenges.
     
     Attributes:
-        oracles (Dict[str, PIOracle]): Named polynomial oracles.
+        oracles (Dict[str, PIORacle]): Named polynomial oracles.
         evaluations (Dict[str, List[FiniteField]]): Polynomial evaluations at challenge points.
     """
     
-    def __init__(self, oracles: Dict[str, PIOracle], 
+    def __init__(self, oracles: Dict[str, 'PIORacle'], 
                  evaluations: Dict[str, List[FiniteField]]):
         """
         Initialize a PIOP proof.
@@ -195,9 +195,9 @@ class PIOP:
         
         # Create oracles
         oracles = {
-            'witness': PIOracle(witness_poly),
-            'trace': PIOracle(trace_poly),
-            'constraint': PIOracle(constraint_poly),
+            'witness': PIORacle(witness_poly),
+            'trace': PIORacle(trace_poly),
+            'constraint': PIORacle(constraint_poly),
         }
         
         # Pre-compute some evaluations (in interactive version, these would be computed on demand)

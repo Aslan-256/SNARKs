@@ -1,7 +1,7 @@
 """Unit tests for PIOP proof system."""
 
 import pytest
-from snarks.proofs.piop import PIOP, PIOPSetup, PIOPProof, PIOracle, piop_example
+from snarks.proofs.piop import PIOP, PIOPSetup, PIOPProof, PIORacle, piop_example
 from snarks.core.polynomial import Polynomial
 from snarks.core.finite_field import FiniteField
 
@@ -20,7 +20,7 @@ class TestPIOP:
         """Test polynomial oracle creation."""
         coeffs = [FiniteField(1, 7), FiniteField(2, 7), FiniteField(3, 7)]
         poly = Polynomial(coeffs)
-        oracle = PIOracle(poly)
+        oracle = PIORacle(poly)
         
         assert oracle.polynomial == poly
         assert oracle.commitment.modulus == 7
@@ -29,7 +29,7 @@ class TestPIOP:
         """Test oracle querying."""
         coeffs = [FiniteField(1, 7), FiniteField(2, 7)]
         poly = Polynomial(coeffs)  # 1 + 2x
-        oracle = PIOracle(poly)
+        oracle = PIORacle(poly)
         
         # Query at x=3: 1 + 2*3 = 7 mod 7 = 0
         result = oracle.query(FiniteField(3, 7))
