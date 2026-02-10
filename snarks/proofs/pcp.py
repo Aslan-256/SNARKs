@@ -181,7 +181,7 @@ class MerkleTree:
         current_index = leaf_index
         
         # Verify each level of the path
-        for level_idx, (position, siblings) in enumerate(path):
+        for _, (position, siblings) in enumerate(path):
             # Ensure the current hash matches the expected position
             if position >= len(siblings):
                 return False
