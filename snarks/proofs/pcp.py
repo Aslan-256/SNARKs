@@ -143,6 +143,8 @@ class MerkleTree:
             
             # Get all siblings in the group
             siblings = level[group_start:group_end]
+            while len(siblings) < self.arity:
+                siblings.append(siblings[-1])  # Pad with last sibling if needed
             
             path.append((position_in_group, siblings))
             
@@ -181,7 +183,7 @@ class MerkleTree:
         current_index = leaf_index
         
         # Verify each level of the path
-        for _, (position, siblings) in enumerate(path):
+        for level_idx, (position, siblings) in enumerate(path):
             # Ensure the current hash matches the expected position
             if position >= len(siblings):
                 return False
@@ -339,7 +341,7 @@ class SimulatedPIR:
 
 class PCPOracle:
     """
-    Toy PCP Oracle for generating probabilistically checkable proofs.
+    PCP Oracle for generating probabilistically checkable proofs.
     
     This implements a simple PCP system based on Hadamard linearity testing.
     The oracle generates a proof string π that can be verified by checking

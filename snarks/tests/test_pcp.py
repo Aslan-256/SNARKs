@@ -77,7 +77,7 @@ class TestMerkleTree:
         """Test verification of authentication paths."""
         data = [f'leaf{i}'.encode() for i in range(10)]
         tree = MerkleTree(data, arity=2)
-        
+                
         for i in range(len(data)):
             path = tree.get_authentication_path(i)
             is_valid = tree.verify_authentication_path(i, data[i], path)
