@@ -8,40 +8,37 @@ This script demonstrates how to use each of the implemented proof systems:
 - PIOP (Polynomial Interactive Oracle Proofs)
 """
 
-from snarks.proofs.pcp import PCP
+from snarks.proofs.pcp import demo_kilian, demo_micali, demo_bcc14
 from snarks.proofs.qap import QAP
 from snarks.proofs.lip import LIP
 from snarks.proofs.piop import PIOP
 
 
-def pcp_example():
-    """Demonstrate PCP usage."""
+def micali_example():
+    """Demonstrate Micali's SNARG usage."""
     print("\n" + "="*70)
-    print("PCP (Probabilistically Checkable Proof) Example")
+    print("PCP (Probabilistically Checkable Proof) Example - Micali's SNARG")
     print("="*70)
-    
-    # Setup
-    print("\n1. Setup:")
-    setup = PCP.setup(modulus=97, constraint_degree=2)
-    print(f"   Field modulus: {setup.modulus}")
-    print(f"   Constraint degree: {setup.constraint_degree}")
-    
-    # Define witness and statement
-    witness = [3, 4, 5]  # Secret values
-    statement = [12]     # Public statement: sum = 12
-    print(f"\n2. Witness (secret): {witness}")
-    print(f"   Statement (public): sum = {statement[0]}")
-    
-    # Prove
-    print("\n3. Generating proof...")
-    proof = PCP.prove(setup, witness, statement)
-    print(f"   Proof length: {len(proof.proof_string)} field elements")
-    
-    # Verify
-    print("\n4. Verifying proof...")
-    is_valid = PCP.verify(setup, proof, statement)
-    print(f"   Proof valid: {is_valid}")
-    
+    is_valid, desc = demo_micali()
+    print(desc)
+    return is_valid
+
+def bcc14_example():
+    """Demonstrate BCC14 SNARK usage."""
+    print("\n" + "="*70)
+    print("PCP (Probabilistically Checkable Proof) Example - BCC14 SNARK")
+    print("="*70)
+    is_valid, desc = demo_bcc14()
+    print(desc)
+    return is_valid
+
+def kilian_example():
+    """Demonstrate PCP usage (Kilian's protocol)."""
+    print("\n" + "="*70)
+    print("PCP (Probabilistically Checkable Proof) Example - Kilian's Protocol")
+    print("="*70)
+    is_valid, desc = demo_kilian()
+    print(desc)
     return is_valid
 
 
@@ -154,18 +151,21 @@ def main():
     print("="*70)
     print("\nThis demonstration shows all four implemented proof systems:")
     print("  • PCP  - Probabilistically Checkable Proofs")
+    print("      • Kilian's Protocol")
+    print("      • Micali's SNARG")
+    print("      • BCC14 SNARK")
     print("  • QAP  - Quadratic Arithmetic Programs")
     print("  • LIP  - Linear Interactive Proofs")
     print("  • PIOP - Polynomial Interactive Oracle Proofs")
     
     results = {}
-    
     # Run each example
-    results['PCP'] = pcp_example()
+    results['Kilian'] = kilian_example()
+    results['Micali'] = micali_example()
+    results['BCC14'] = bcc14_example()
     results['QAP'] = qap_example()
     results['LIP'] = lip_example()
     results['PIOP'] = piop_example()
-    
     # Summary
     print("\n" + "="*70)
     print("Summary")
@@ -173,7 +173,6 @@ def main():
     for system, valid in results.items():
         status = "✓ PASSED" if valid else "✗ FAILED"
         print(f"  {system:6s} : {status}")
-    
     all_passed = all(results.values())
     print(f"\nOverall: {'All systems working correctly!' if all_passed else 'Some systems failed.'}")
     print("="*70 + "\n")
