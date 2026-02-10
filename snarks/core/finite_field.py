@@ -118,7 +118,7 @@ class FiniteField:
             raise ValueError("Cannot divide by zero")
         # Multiply by the multiplicative inverse
         inv = other.inverse()
-        return self * inv
+        return self.__mul__(inv)
     
     def __pow__(self, exponent: int) -> 'FiniteField':
         """
