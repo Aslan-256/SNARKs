@@ -5,7 +5,7 @@ This module provides polynomial arithmetic over finite fields, supporting
 evaluation, addition, multiplication, and division operations.
 """
 
-from typing import List, Union
+from typing import List, Union, Tuple
 from .finite_field import FiniteField
 
 
@@ -290,3 +290,79 @@ class Polynomial:
         coeffs = [FiniteField(0, modulus) for _ in range(degree + 1)]
         coeffs[degree] = FiniteField(coefficient, modulus)
         return cls(coeffs)
+    
+    def is_zero(self) -> bool:
+        """
+        Check if this is the zero polynomial.
+        
+        Returns:
+            True if all coefficients are zero.
+        """
+        return all(c.value == 0 for c in self.coefficients)
+    
+    def divide(self, divisor: 'Polynomial') -> Tuple['Polynomial', 'Polynomial']:
+        """
+        Polynomial long division.
+        
+        Compute quotient and remainder such that:
+            self = quotient * divisor + remainder
+        where degree(remainder) < degree(divisor).
+        
+        Args:
+            divisor: The polynomial to divide by.
+        
+        Returns:
+            Tuple of (quotient, remainder).
+        
+        Raises:
+            ValueError: If divisor is zero or from different field.
+            ZeroDivisionError: If attempting to divide by zero polynomial.
+        
+        Example:
+            >>> # Divide x^2 + 2x + 1 by x + 1
+            >>> p = Polynomial([FF(1), FF(2), FF(1)])  # 1 + 2x + x^2
+            >>> d = Polynomial([FF(1), FF(1)])         # 1 + x
+            >>> q, r = p.divide(d)
+        """
+        if divisor.modulus != self.modulus:
+            raise ValueError("Cannot divide polynomials from different fields")
+        
+        if divisor.is_zero():
+            raise ZeroDivisionError("Cannot divide by zero polynomial")
+        
+        # Make copies to avoid modifying originals
+        remainder = Polynomial(self.coefficients[:])
+        divisor_deg = divisor.degree()
+        divisor_lead = divisor.coefficients[divisor_deg]
+        
+        quotient_coeffs = []
+        
+        while remainder.degree() >= divisor_deg and not remainder.is_zero():
+            # Compute leading term of quotient
+            remainder_deg = remainder.degree()
+            remainder_lead = remainder.coefficients[remainder_deg]
+            
+            # q_term = remainder_lead / divisor_lead
+            q_term = remainder_lead / divisor_lead
+            q_degree = remainder_deg - divisor_deg
+            
+            # Build quotient term polynomial
+            q_term_poly_coeffs = [FiniteField(0, self.modulus) for _ in range(q_degree + 1)]
+            q_term_poly_coeffs[q_degree] = q_term
+            q_term_poly = Polynomial(q_term_poly_coeffs)
+            
+            # Add to quotient coefficients list
+            while len(quotient_coeffs) <= q_degree:
+                quotient_coeffs.append(FiniteField(0, self.modulus))
+            quotient_coeffs[q_degree] = q_term
+            
+            # Subtract q_term * divisor from remainder
+            remainder = remainder - (q_term_poly * divisor)
+        
+        # Build quotient polynomial
+        if not quotient_coeffs:
+            quotient = Polynomial.zero(self.modulus)
+        else:
+            quotient = Polynomial(quotient_coeffs)
+        
+        return quotient, remainder

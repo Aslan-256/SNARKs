@@ -4,50 +4,103 @@ Polynomial Interactive Oracle Proof (PIOP) implementation.
 PIOP combines interactive proofs with polynomial commitments, allowing
 the verifier to query committed polynomials at random points.
 
-This is a simplified educational implementation.
+Modern PIOPs use:
+- KZG commitments for succinct polynomial commitments (O(1) size)
+- Fiat-Shamir transformation for non-interactive proofs
+- Polynomial evaluation arguments for efficient opening
+
+References:
+    [BCS16] Ben-Sasson et al.: "Interactive Oracle Proofs"
+    [BCCGP16] Bootle et al.: "Efficient Zero-Knowledge Arguments"
+    Section 9.4: Polynomial IOPs and Modern SNARKs
 """
 
 from typing import List, Tuple, Optional, Dict
 from ..core.finite_field import FiniteField
 from ..core.polynomial import Polynomial
+from snarks.primitives import KZGCommitment, KZGSetup, Transcript
 import random
 
 
 class PIORacle:
     """
-    Represents a polynomial oracle.
+    Represents a polynomial oracle with KZG commitment.
     
     An oracle allows the verifier to query a committed polynomial
     at arbitrary points without revealing the entire polynomial.
     
+    **Modern Implementation:**
+    Uses KZG polynomial commitments for:
+    - Constant-size commitments (single group element)
+    - Efficient opening proofs (constant size)
+    - Pairing-based verification
+    
     Attributes:
         polynomial (Polynomial): The committed polynomial.
-        commitment (FiniteField): A commitment to the polynomial (simplified).
+        commitment (int): KZG commitment to the polynomial.
+        kzg_scheme (KZGCommitment): The KZG commitment scheme instance.
+        kzg_setup (KZGSetup): The trusted setup parameters.
     """
     
-    def __init__(self, polynomial: Polynomial):
+    def __init__(self, polynomial: Polynomial, kzg_scheme: KZGCommitment, 
+                 kzg_setup: KZGSetup):
         """
-        Initialize a polynomial oracle.
+        Initialize a polynomial oracle with KZG commitment.
         
         Args:
             polynomial: The polynomial to commit to.
+            kzg_scheme: KZG commitment scheme instance.
+            kzg_setup: Trusted setup parameters.
         """
         self.polynomial = polynomial
-        # Simple commitment: sum of coefficients (in real systems, use crypto commitment)
-        commit_value = sum(c.value for c in polynomial.coefficients) % polynomial.modulus
-        self.commitment = FiniteField(commit_value, polynomial.modulus)
+        self.kzg_scheme = kzg_scheme
+        self.kzg_setup = kzg_setup
+        
+        # Create KZG commitment to polynomial
+        coeffs = [c.value for c in polynomial.coefficients]
+        self.commitment = kzg_scheme.commit(coeffs, kzg_setup)
     
-    def query(self, point: FiniteField) -> FiniteField:
+    def query(self, point: FiniteField) -> Tuple[FiniteField, int]:
         """
-        Query the oracle at a specific point.
+        Query the oracle at a specific point with proof.
+        
+        Generates both the evaluation and a KZG opening proof.
         
         Args:
             point: The point at which to evaluate the polynomial.
         
         Returns:
-            The polynomial evaluated at the point.
+            Tuple of (evaluation, opening_proof).
         """
-        return self.polynomial.evaluate(point)
+        # Evaluate polynomial
+        eval_value = self.polynomial.evaluate(point)
+        
+        # Generate KZG opening proof
+        coeffs = [c.value for c in self.polynomial.coefficients]
+        _, proof = self.kzg_scheme.open(coeffs, point.value, self.kzg_setup)
+        
+        return eval_value, proof
+    
+    def verify_query(self, point: FiniteField, claimed_value: FiniteField, 
+                     proof: int) -> bool:
+        """
+        Verify a query response.
+        
+        Args:
+            point: The query point.
+            claimed_value: The claimed evaluation.
+            proof: The KZG opening proof.
+        
+        Returns:
+            True if proof is valid, False otherwise.
+        """
+        return self.kzg_scheme.verify(
+            self.commitment, 
+            point.value, 
+            claimed_value.value, 
+            proof, 
+            self.kzg_setup
+        )
 
 
 class PIOPProof:

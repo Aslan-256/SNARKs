@@ -63,21 +63,160 @@ pip install -e .
 
 ## Quick Start
 
+### Getting Started with Circuit-Based zkSNARKs
+
+#### Step 1: Define Your Circuit
+
+Create an arithmetic circuit representing your computation:
+
+```python
+from snarks.core.circuit import ArithmeticCircuit
+
+# Example: Prove you know x such that x^2 + x = 6
+circuit = ArithmeticCircuit(modulus=97)
+
+# Add private input (witness)
+x = circuit.add_input(is_public=False, name="x")
+
+# Compute x^2
+x_squared = circuit.mul(x, x, name="x_squared")
+
+# Compute x^2 + x
+result = circuit.add(x_squared, x, name="result")
+
+# Set result as public output
+circuit.set_output(result)
+```
+
+#### Step 2: Run Trusted Setup
+
+Generate proving and verification keys (Common Reference String):
+
 ```python
 from snarks.proofs.qap import QAP
 
-# Setup: Create a QAP for a simple circuit (x * y = z)
-setup = QAP.setup(modulus=97)
+# Initialize QAP from circuit
+qap = QAP(circuit)
 
-# Prove: Generate a proof with witness [1, x=3, y=4, z=12]
-witness = [1, 3, 4, 12]
-proof = QAP.prove(setup, witness)
+# Perform trusted setup
+pk, vk = qap.setup()
 
-# Verify: Check the proof with public inputs
-public_inputs = [1, 12]
-is_valid = QAP.verify(setup, proof, public_inputs)
+# pk = Proving Key (for provers, contains secrets)
+# vk = Verification Key (for verifiers, public)
+```
+
+**⚠️ Security Note**: In production, the secret τ must be destroyed after setup using multi-party computation (MPC) ceremonies.
+
+#### Step 3: Generate a Proof
+
+Prover creates a proof knowing the private witness:
+
+```python
+# Prover knows: x = 2
+# Public statement: result = 6
+
+proof = qap.prove(
+    pk,
+    public_inputs={result: 6},  # Public: the result is 6
+    witness={x: 2}               # Private: secret input x=2
+)
+
+# The proof is succinct (small) regardless of circuit size
+```
+
+#### Step 4: Verify the Proof
+
+Verifier checks the proof without knowing the witness:
+
+```python
+# Verifier only knows the public output (result=6)
+# Verifier does NOT know x=2
+
+is_valid = qap.verify(
+    vk,
+    public_inputs={result: 6},
+    proof=proof
+)
+
+print(f"Proof valid: {is_valid}")  # Output: True
+
+# Zero-knowledge: verifier learned nothing about x!
+```
+
+### Complete Example
+
+Here's a full working example you can run:
+
+```python
+from snarks.core.circuit import ArithmeticCircuit
+from snarks.proofs.qap import QAP
+
+# 1. Define Circuit: out = (x + y) * z
+circuit = ArithmeticCircuit(modulus=97)
+x, y, z = circuit.add_inputs(3, is_public=False)
+sum_xy = circuit.add(x, y)
+out = circuit.mul(sum_xy, z)
+circuit.set_output(out)
+
+# 2. Setup
+qap = QAP(circuit)
+pk, vk = qap.setup()
+
+# 3. Prove: x=2, y=3, z=4 → (2+3)×4 = 20
+proof = qap.prove(pk, {out: 20}, {x: 2, y: 3, z: 4})
+
+# 4. Verify
+is_valid = qap.verify(vk, {out: 20}, proof)
+print(f"Proof valid: {is_valid}")  # True
+```
+
+### New Architecture (Circuit-Based)
+
+The library now follows the standard zkSNARK pipeline: **Computation → Arithmetic Circuit → R1CS → QAP → Setup/Prove/Verify**
+
+```python
+from snarks.core.circuit import ArithmeticCircuit
+from snarks.proofs.qap import QAP
+
+# 1. Define Circuit: out = (x + y) * z
+circuit = ArithmeticCircuit(modulus=97)
+x, y, z = circuit.add_inputs(3, is_public=False, names=["x", "y", "z"])
+sum_wire = circuit.add(x, y, name="x_plus_y")
+out = circuit.mul(sum_wire, z, name="output")
+circuit.set_output(out)
+
+# 2. Setup (Trusted Setup / CRS Generation)
+qap = QAP(circuit)
+pk, vk = qap.setup()  # Proving Key, Verification Key
+
+# 3. Prove: I know x=3, y=4, z=5 such that out = 35
+proof = qap.prove(
+    pk,
+    public_inputs={out: 35},     # Public: the result
+    witness={x: 3, y: 4, z: 5}   # Private: the secret inputs
+)
+
+# 4. Verify: Check the proof (verifier only knows public inputs)
+is_valid = qap.verify(vk, public_inputs={out: 35}, proof=proof)
 print(f"Proof valid: {is_valid}")  # Output: Proof valid: True
 ```
+
+### Legacy Interface (Simplified)
+
+The old interface is still supported for backward compatibility:
+
+```python
+from snarks.proofs.qap import qap_example
+
+# Run complete example with default circuit (x * y = z)
+qap, proof, pk, vk = qap_example()
+x_wire = qap.circuit.inputs[0]
+z_wire = qap.circuit.outputs[0]
+
+is_valid = qap.verify(vk, {z_wire: 12}, proof)
+print(f"Proof valid: {is_valid}")  # Output: Proof valid: True
+```
+
 
 ## Theory Overview
 
@@ -85,7 +224,58 @@ print(f"Proof valid: {is_valid}")  # Output: Proof valid: True
 
 Zero-knowledge proofs allow a **prover** to convince a **verifier** that a statement is true without revealing any information beyond the validity of the statement itself.
 
+### zkSNARK Pipeline (New Architecture)
+
+This library now implements the complete zkSNARK construction pipeline:
+
+```
+Computation
+    ↓
+Arithmetic Circuit (Gates: +, ×)
+    ↓
+R1CS (Rank-1 Constraint System)
+    ↓
+QAP (Quadratic Arithmetic Program)
+    ↓
+Trusted Setup (CRS/SRS Generation)
+    ↓
+Prove / Verify
+```
+
+#### 1. Arithmetic Circuits
+
+Computations are represented as circuits with:
+- **Inputs**: Public statements ($x$) and private witnesses ($w$)
+- **Gates**: Addition and multiplication over finite fields
+- **Wires**: Connections between gates
+- **Outputs**: Public values to be verified
+
+#### 2. R1CS (Rank-1 Constraint System)
+
+Circuits are flattened into bilinear constraints:
+$$(\mathbf{A} \cdot \mathbf{w}) \circ (\mathbf{B} \cdot \mathbf{w}) = (\mathbf{C} \cdot \mathbf{w})$$
+
+where $\mathbf{w}$ is the witness vector and $\circ$ is element-wise multiplication.
+
+#### 3. QAP (Quadratic Arithmetic Programs)
+
+R1CS is converted to polynomial form using Lagrange interpolation:
+$$A(x) \cdot B(x) - C(x) = H(x) \cdot t(x)$$
+
+where:
+- $A(x), B(x), C(x)$: Polynomials encoding constraints
+- $t(x)$: Target polynomial (vanishes at evaluation points)
+- $H(x)$: Quotient polynomial (proof of satisfaction)
+
+#### 4. Trusted Setup
+
+Generate proving key ($pk$) and verification key ($vk$):
+- Sample secret $\tau \leftarrow \mathbb{F}_p$
+- Encode polynomial evaluations at $\tau$ (encrypted via elliptic curves in production)
+- **Critical**: $\tau$ must be destroyed after setup (toxic waste!)
+
 ### Proof Systems Implemented
+
 
 #### 1. PCP (Probabilistically Checkable Proofs)
 
@@ -154,19 +344,23 @@ SNARKs/
 │   ├── core/                  # Core mathematical modules
 │   │   ├── __init__.py
 │   │   ├── finite_field.py    # Finite field arithmetic
-│   │   └── polynomial.py      # Polynomial operations
+│   │   ├── polynomial.py      # Polynomial operations
+│   │   ├── circuit.py         # ⭐ NEW: Arithmetic circuit representation
+│   │   └── arithmetization.py # ⭐ NEW: Circuit → R1CS → QAP conversion
 │   ├── proofs/                # Proof system implementations
 │   │   ├── __init__.py
+│   │   ├── qap.py            # ⭐ REFACTORED: Circuit-based QAP with setup/prove/verify
 │   │   ├── pcp.py            # Probabilistically Checkable Proofs
-│   │   ├── qap.py            # Quadratic Arithmetic Programs
 │   │   ├── lip.py            # Linear Interactive Proofs
 │   │   └── piop.py           # Polynomial Interactive Oracle Proofs
 │   ├── tests/                 # Unit tests
 │   │   ├── __init__.py
 │   │   ├── test_finite_field.py
 │   │   ├── test_polynomial.py
-│   │   ├── test_pcp.py
+│   │   ├── test_circuit.py        # ⭐ NEW: Circuit tests
+│   │   ├── test_arithmetization.py # ⭐ NEW: R1CS/QAP conversion tests
 │   │   ├── test_qap.py
+│   │   ├── test_pcp.py
 │   │   ├── test_lip.py
 │   │   └── test_piop.py
 │   ├── examples/              # Usage examples
@@ -182,9 +376,172 @@ SNARKs/
 └── README.md
 ```
 
+### Key New Modules
+
+#### `snarks/core/circuit.py`
+- **ArithmeticCircuit**: DAG representation of computations
+- **Wire**: Connections between gates
+- **Gate**: Addition and multiplication operations
+- **Circuit evaluation**: Check satisfiability
+
+#### `snarks/core/arithmetization.py`
+- **R1CS**: Rank-1 Constraint System representation
+- **QAPInstance**: Polynomial representation of constraints
+- **Arithmetization**: Conversion pipeline (Circuit → R1CS → QAP)
+- **Lagrange interpolation**: Polynomial construction
+
+#### `snarks/proofs/qap.py` (Refactored)
+- **QAP**: Main zkSNARK class with circuit-based interface
+- **ProvingKey**: CRS for provers (contains secrets)
+- **VerificationKey**: CRS for verifiers (public)
+- **QAPProof**: Succinct proof of computation
+- **Trusted setup**: Generate pk/vk from circuit
+
+
 ## Usage Examples
 
-### Example 1: Finite Field Arithmetic
+### Example 1: Simple Multiplication Circuit (x × y = z)
+
+```python
+from snarks.core.circuit import ArithmeticCircuit
+from snarks.proofs.qap import QAP
+
+# Step 1: Define the circuit
+circuit = ArithmeticCircuit(modulus=97)
+x = circuit.add_input(is_public=False, name="x")
+y = circuit.add_input(is_public=False, name="y")
+z = circuit.mul(x, y, name="z")
+circuit.set_output(z)
+
+# Step 2: Compile to QAP and perform trusted setup
+qap = QAP(circuit)
+pk, vk = qap.setup()
+
+# Step 3: Prover generates proof (knows x=3, y=4)
+proof = qap.prove(
+    pk,
+    public_inputs={z: 12},    # Public: result is 12
+    witness={x: 3, y: 4}       # Private: secret factors
+)
+
+# Step 4: Verifier checks proof (only knows result)
+is_valid = qap.verify(vk, public_inputs={z: 12}, proof=proof)
+print(f"Proof valid: {is_valid}")  # True
+```
+
+### Example 2: Complex Circuit (out = (x + y) × z)
+
+```python
+from snarks.core.circuit import ArithmeticCircuit
+from snarks.proofs.qap import QAP
+
+# Define circuit with both addition and multiplication
+circuit = ArithmeticCircuit(modulus=97)
+x, y, z = circuit.add_inputs(3, is_public=False)
+sum_xy = circuit.add(x, y)      # sum_xy = x + y
+out = circuit.mul(sum_xy, z)     # out = sum_xy * z
+circuit.set_output(out)
+
+# Setup
+qap = QAP(circuit)
+pk, vk = qap.setup()
+
+# Prove: x=2, y=3, z=4 → (2+3)×4 = 20
+proof = qap.prove(pk, {out: 20}, {x: 2, y: 3, z: 4})
+
+# Verify
+is_valid = qap.verify(vk, {out: 20}, proof)
+print(f"Valid: {is_valid}")  # True
+```
+
+### Example 3: Quadratic Equation (x² + c = y)
+
+```python
+from snarks.core.circuit import ArithmeticCircuit
+from snarks.proofs.qap import QAP
+
+# Circuit for x^2 + c = y
+circuit = ArithmeticCircuit(modulus=97)
+x = circuit.add_input(is_public=False, name="x")
+c = circuit.add_input(is_public=True, name="c")  # Public constant
+y = circuit.add_input(is_public=True, name="y")  # Public output
+
+# Compute x^2
+x_squared = circuit.mul(x, x, name="x_squared")
+
+# Compute x^2 + c
+result = circuit.add(x_squared, c, name="result")
+
+# Constrain result = y (enforce equality)
+# In a full implementation, we'd check result == y
+circuit.set_output(result)
+
+# Setup
+qap = QAP(circuit)
+pk, vk = qap.setup()
+
+# Prove: x=5, c=2, y=27 (since 5^2 + 2 = 27)
+proof = qap.prove(pk, {c: 2, y: 27}, {x: 5})
+
+# Verify (verifier only knows c and y, not x)
+is_valid = qap.verify(vk, {c: 2, y: 27}, proof)
+print(f"Valid: {is_valid}")  # True
+```
+
+### Example 4: Arithmetic Circuit Evaluation
+
+```python
+from snarks.core.circuit import ArithmeticCircuit
+
+circuit = ArithmeticCircuit(modulus=97)
+a, b, c = circuit.add_inputs(3, is_public=False)
+
+# Build circuit: out = (a + b) * c + 5
+sum_ab = circuit.add(a, b)
+mul_abc = circuit.mul(sum_ab, c)
+out = circuit.add_const(mul_abc, 5)
+circuit.set_output(out)
+
+# Evaluate circuit to check satisfiability
+input_values = {a: 2, b: 3, c: 4}
+wire_values = circuit.evaluate(input_values)
+
+print(f"Output: {wire_values[out].value}")  # (2+3)*4+5 = 25
+print(f"Satisfied: {circuit.is_satisfied(input_values)}")  # True
+
+# Circuit properties
+print(f"Total gates: {circuit.get_num_gates()}")
+print(f"Multiplication gates: {circuit.get_num_multiplication_gates()}")
+print(f"Constraints: {circuit.get_num_constraints()}")
+```
+
+### Example 5: Direct R1CS Access
+
+```python
+from snarks.core.circuit import ArithmeticCircuit
+from snarks.core.arithmetization import Arithmetization
+
+# Create circuit
+circuit = ArithmeticCircuit(modulus=97)
+x, y = circuit.add_inputs(2, is_public=False)
+z = circuit.mul(x, y)
+circuit.set_output(z)
+
+# Convert to R1CS
+r1cs = Arithmetization.circuit_to_r1cs(circuit)
+print(f"R1CS: {r1cs.num_constraints} constraints, {r1cs.num_variables} variables")
+
+# Check witness satisfiability
+witness_values = [1, 3, 4, 12]  # [ONE, x, y, z]
+is_satisfied = r1cs.is_satisfied(witness_values)
+print(f"Witness satisfies R1CS: {is_satisfied}")  # True
+
+# Convert R1CS to QAP
+qap_instance = Arithmetization.r1cs_to_qap(r1cs)
+print(f"QAP: degree={qap_instance.target.degree()}")
+```
+
+### Example 6: Finite Field Arithmetic
 
 ```python
 from snarks.core.finite_field import FiniteField
@@ -203,7 +560,7 @@ print(f"Addition: {c}")           # Output: 1 (mod 7)
 print(f"Multiplication: {d}")     # Output: 1 (mod 7)
 ```
 
-### Example 2: Polynomial Operations
+### Example 7: Polynomial Operations
 
 ```python
 from snarks.core.polynomial import Polynomial
@@ -221,9 +578,12 @@ result = p.evaluate(x)  # 1 + 2*2 + 3*4 = 1 + 4 + 12 = 17 mod 7 = 3
 q = Polynomial([FiniteField(1, 7), FiniteField(1, 7)])  # q(x) = 1 + x
 r = p + q          # Add polynomials
 s = p * q          # Multiply polynomials
+
+# Polynomial division (new feature)
+quotient, remainder = p.divide(q)
 ```
 
-### Example 3: PCP Proof
+### Example 8: Legacy PCP Proof (Backward Compatible)
 
 ```python
 from snarks.proofs.pcp import PCP
@@ -243,25 +603,7 @@ is_valid = PCP.verify(setup, proof, statement)
 print(f"Proof valid: {is_valid}")
 ```
 
-### Example 4: QAP Proof
-
-```python
-from snarks.proofs.qap import QAP
-
-# Setup for circuit: x * y = z
-setup = QAP.setup(modulus=97)
-
-# Prove knowledge of x, y such that x * y = z
-witness = [1, 3, 4, 12]    # [constant, x, y, z] where 3*4=12
-proof = QAP.prove(setup, witness)
-
-# Verify with public inputs
-public_inputs = [1, 12]     # constant and result are public
-is_valid = QAP.verify(setup, proof, public_inputs)
-print(f"Proof valid: {is_valid}")
-```
-
-### Example 5: LIP Interactive Proof
+### Example 9: Legacy LIP Interactive Proof
 
 ```python
 from snarks.proofs.lip import LIP
@@ -276,7 +618,7 @@ proof, is_valid = LIP.interactive_prove_verify(setup, witness, statement)
 print(f"Interactive proof valid: {is_valid}")
 ```
 
-### Example 6: PIOP with Polynomial Oracles
+### Example 10: Legacy PIOP with Polynomial Oracles
 
 ```python
 from snarks.proofs.piop import PIOP
