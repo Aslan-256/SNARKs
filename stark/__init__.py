@@ -12,13 +12,13 @@
 #   fri         – FRI (Fast Reed-Solomon IOP of Proximity) protocol.
 #   stark       – Top-level Prover / Verifier orchestration.
 
-from snarks.field import PrimeField, FieldElement
-from snarks.polynomial import Polynomial
-from snarks.merkle import MerkleTree
-from snarks.channel import Channel
-from snarks.air import FibonacciAIR
-from snarks.fri import FRIProtocol
-from snarks.stark import StarkProver, StarkVerifier
+from stark.field import PrimeField, FieldElement
+from stark.polynomial import Polynomial
+from stark.merkle import MerkleTree
+from stark.channel import Channel
+from stark.air import FibonacciAIR
+from stark.fri import FRIProtocol
+from stark.stark import StarkProver, StarkVerifier
 
 __all__ = [
     "PrimeField",

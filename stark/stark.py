@@ -38,18 +38,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from snarks.field import FieldElement, PrimeField, STARK_PRIME
-from snarks.polynomial import (
+from stark.field import FieldElement, PrimeField, STARK_PRIME
+from stark.polynomial import (
     Polynomial,
     interpolate,
     ntt,
     intt,
     zerofier_on_subgroup,
 )
-from snarks.merkle import MerkleTree
-from snarks.channel import Channel
-from snarks.air import AIR, FibonacciAIR
-from snarks.fri import FRIProtocol, FRIProof
+from stark.merkle import MerkleTree
+from stark.channel import Channel
+from stark.air import AIR, FibonacciAIR
+from stark.fri import FRIProtocol, FRIProof
 
 
 # ---------------------------------------------------------------------------

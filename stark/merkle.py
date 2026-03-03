@@ -1,12 +1,12 @@
 """
-snarks.merkle – Merkle-tree commitment scheme.
+snarks.merkle - Merkle-tree commitment scheme.
 
 Mathematical background
 -----------------------
 A **Merkle tree** lets us commit to a list of n values with a single hash
 (the *root*).  Later we can reveal any single leaf together with a short
 (O(log n)) **authentication path** (a.k.a. *decommitment*), and the verifier
-can check that the leaf is consistent with the root — without seeing the
+can check that the leaf is consistent with the root - without seeing the
 other leaves.
 
 In STARKs the prover evaluates a polynomial on a large domain and commits to
@@ -30,7 +30,7 @@ from typing import List, Sequence, Tuple
 
 
 # ---------------------------------------------------------------------------
-# Abstract hash interface — swap this to change the hash function
+# Abstract hash interface - swap this to change the hash function
 # ---------------------------------------------------------------------------
 
 class BaseHash(abc.ABC):
@@ -108,7 +108,7 @@ class MerkleTree:
 
     @property
     def root(self) -> bytes:
-        """Return the Merkle root — a binding commitment to all leaves."""
+        """Return the Merkle root - a binding commitment to all leaves."""
         return self.tree[1]
 
     # ----- opening (authentication path) -----------------------------------
@@ -145,7 +145,7 @@ class MerkleTree:
         Verify that ``leaf_data`` at position ``index`` is consistent with
         ``root`` given the authentication ``auth_path``.
 
-        This is a **static** method — it does not require the full tree.
+        This is a **static** method - it does not require the full tree.
         """
         h = hasher or SHA256Hash()
         current = h.hash_leaf(leaf_data)
@@ -167,7 +167,7 @@ class MerkleTree:
     @classmethod
     def from_field_elements(
         cls,
-        elements: Sequence,  # Sequence[FieldElement] — avoid circular import
+        elements: Sequence,  # Sequence[FieldElement] - avoid circular import
         hasher: BaseHash | None = None,
     ) -> "MerkleTree":
         """

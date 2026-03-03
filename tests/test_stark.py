@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from snarks.field import FieldElement, PrimeField, STARK_PRIME
-from snarks.polynomial import (
+from stark.field import FieldElement, PrimeField, STARK_PRIME
+from stark.polynomial import (
     Polynomial,
     interpolate,
     ntt,
@@ -24,11 +24,11 @@ from snarks.polynomial import (
     zerofier_on_domain,
     zerofier_on_subgroup,
 )
-from snarks.merkle import MerkleTree
-from snarks.channel import Channel
-from snarks.air import FibonacciAIR
-from snarks.fri import FRIProtocol
-from snarks.stark import StarkProver, StarkVerifier
+from stark.merkle import MerkleTree
+from stark.channel import Channel
+from stark.air import FibonacciAIR
+from stark.fri import FRIProtocol
+from stark.stark import StarkProver, StarkVerifier
 
 
 # ===================================================================

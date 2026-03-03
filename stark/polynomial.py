@@ -1,19 +1,19 @@
 """
-snarks.polynomial – Polynomial arithmetic, interpolation, and FFT/NTT.
+snarks.polynomial - Polynomial arithmetic, interpolation, and FFT/NTT.
 
 Mathematical background
 -----------------------
 Polynomials over a finite field F_p are the backbone of STARK arithmetization.
 
 Key operations:
-* **Evaluation / Multi-point evaluation** – compute f(x) for many x values.
-* **Interpolation** – given (x_i, y_i) pairs, recover the unique polynomial of
+* **Evaluation / Multi-point evaluation** - compute f(x) for many x values.
+* **Interpolation** - given (x_i, y_i) pairs, recover the unique polynomial of
   degree < n passing through all of them.
-* **Low-Degree Extension (LDE)** – evaluate a low-degree polynomial on a much
+* **Low-Degree Extension (LDE)** - evaluate a low-degree polynomial on a much
   larger domain.  This is what the prover commits to; the "blowup" makes the
   Reed-Solomon code have high minimum distance, which is essential for
   soundness.
-* **Number Theoretic Transform (NTT)** – the finite-field analogue of the
+* **Number Theoretic Transform (NTT)** - the finite-field analogue of the
   FFT.  Over F_p whose multiplicative group has a subgroup of order 2^k, we
   can evaluate / interpolate a polynomial on such a subgroup in O(n log n)
   field operations.
@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Sequence
 
-from snarks.field import FieldElement, PrimeField, STARK_PRIME
+from stark.field import FieldElement, PrimeField, STARK_PRIME
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ class Polynomial:
     # ----- construction helpers --------------------------------------------
 
     @classmethod
-    def zero(cls, prime: int = STARK_PRIME) -> "Polynomial":
+    def zero(cls, _: int = STARK_PRIME) -> "Polynomial":
         return cls([])
 
     @classmethod
@@ -138,7 +138,7 @@ class Polynomial:
 
     def __mul__(self, other: "Polynomial | FieldElement | int") -> "Polynomial":
         """
-        Polynomial × polynomial  (schoolbook O(n²)  — fine for the sizes
+        Polynomial × polynomial  (schoolbook O(n²)  - fine for the sizes
         we deal with in this pedagogical implementation).
         Scalar × polynomial is handled as a special case.
         """
@@ -205,7 +205,7 @@ class Polynomial:
 
     def compose(self, inner: "Polynomial") -> "Polynomial":
         """
-        Compose self(inner(x))  — used when folding in FRI.
+        Compose self(inner(x))  - used when folding in FRI.
         Implemented via Horner-like approach in polynomial space.
         """
         if not self.coeffs:
@@ -240,7 +240,7 @@ class Polynomial:
 
 
 # ---------------------------------------------------------------------------
-#  Lagrange interpolation (O(n²) – simple and correct)
+#  Lagrange interpolation (O(n²) - simple and correct)
 # ---------------------------------------------------------------------------
 
 def interpolate(
@@ -286,7 +286,7 @@ def interpolate(
 
 
 # ---------------------------------------------------------------------------
-#  NTT (Number Theoretic Transform) – O(n log n) evaluation & interpolation
+#  NTT (Number Theoretic Transform) - O(n log n) evaluation & interpolation
 # ---------------------------------------------------------------------------
 
 def ntt(

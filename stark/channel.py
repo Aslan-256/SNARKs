@@ -1,5 +1,5 @@
 """
-snarks.channel – Fiat-Shamir non-interactive channel.
+snarks.channel - Fiat-Shamir non-interactive channel.
 
 Mathematical background
 -----------------------
@@ -22,7 +22,7 @@ from __future__ import annotations
 import hashlib
 from typing import List
 
-from snarks.field import FieldElement, STARK_PRIME
+from stark.field import FieldElement, STARK_PRIME
 
 
 class Channel:
@@ -78,7 +78,7 @@ class Channel:
         Derive a uniformly-random-looking field element from the transcript.
 
         Converts 32 bytes to an integer and reduces modulo the field prime.
-        (Negligible statistical bias for primes ≪ 2^{256}.)
+        (Negligible statistical bias for primes << 2^{256}.)
         """
         raw = self._squeeze()
         value = int.from_bytes(raw, "big") % self.prime

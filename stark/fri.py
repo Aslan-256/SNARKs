@@ -1,5 +1,5 @@
 """
-snarks.fri – FRI (Fast Reed-Solomon Interactive Oracle Proof of Proximity).
+snarks.fri - FRI (Fast Reed-Solomon Interactive Oracle Proof of Proximity).
 
 Mathematical background
 -----------------------
@@ -10,14 +10,14 @@ evaluations sit on (or very near) a low-degree polynomial.
 
 The protocol works in **rounds**.  In each round the current polynomial
 f(x) of degree < D is "folded" into a polynomial f'(y) of degree < D/2
-by a random verifier challenge α:
+by a random verifier challenge a:
 
-    f'(y) = f_even(y) + α · f_odd(y)
+    f'(y) = f_even(y) + a · f_odd(y)
 
 where f(x) = f_even(x²) + x · f_odd(x²).
 
 Geometrically, the evaluation domain (a multiplicative coset) is *squared*
-in each round, mapping  {d, −d}  pairs to the same point d²  — which is why
+in each round, mapping  {d, -d}  pairs to the same point d²  — which is why
 the folded evaluation domain is half the size.
 
 After O(log D) rounds the degree bound reaches a small constant and the
@@ -26,14 +26,14 @@ checks consistency at randomly queried positions through every layer.
 
 Detailed steps
 --------------
-1. **Commit phase** – for each layer the prover computes evaluations of the
+1. **Commit phase** - for each layer the prover computes evaluations of the
    folded polynomial on the new (halved) domain and commits with a Merkle
    tree.
-2. **Query phase** – the verifier picks random indices and, for each layer,
-   asks for the two evaluations f(d) and f(−d) together with their Merkle
+2. **Query phase** - the verifier picks random indices and, for each layer,
+   asks for the two evaluations f(d) and f(-d) together with their Merkle
    authentication paths.  It checks that the folding relation holds:
-       f_next(d²) = (f(d) + f(−d)) / 2 + α · (f(d) − f(−d)) / (2d)
-3. **Final check** – the last-layer polynomial (degree 0, i.e. a constant)
+       f_next(d²) = (f(d) + f(-d)) / 2 + a · (f(d) - f(-d)) / (2d)
+3. **Final check** - the last-layer polynomial (degree 0, i.e. a constant)
    is verified directly.
 
 Index tracking
@@ -56,9 +56,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field as dc_field
 from typing import Dict, List, Optional, Tuple
 
-from snarks.field import FieldElement, PrimeField, STARK_PRIME
-from snarks.merkle import MerkleTree
-from snarks.channel import Channel
+from stark.field import FieldElement, PrimeField, STARK_PRIME
+from stark.merkle import MerkleTree
+from stark.channel import Channel
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +80,7 @@ class FRIProof:
     """Complete FRI proof."""
     # Per-layer Merkle roots (layer 0 is the original evaluation).
     commitments: List[bytes]
-    # The folding challenges α_0, α_1, … used in each round.
+    # The folding challenges a_0, a_1, … used in each round.
     alphas: List[FieldElement]
     # For each query index: list-of-layers of FRILayerProof.
     query_proofs: List[List[FRILayerProof]]
@@ -119,7 +119,7 @@ class FRIProtocol:
         (a multiplicative coset of size ``len(evaluations)``).
     domain : list[FieldElement]
         The evaluation domain points (coset elements).
-        **Layout requirement**: ``domain[j + len/2] = −domain[j]`` for
+        **Layout requirement**: ``domain[j + len/2] = -domain[j]`` for
         j in the first half.  This is automatically satisfied for cosets
         of multiplicative subgroups of even order.
     max_degree : int
@@ -187,17 +187,17 @@ class FRIProtocol:
 
             for j in range(half):
                 # domain[j] and domain[j + half] are "partners":
-                #   domain[j + half] = −domain[j]
+                #   domain[j + half] = -domain[j]
                 # because the domain is a coset of a multiplicative subgroup
-                # whose generator raised to half the order equals −1.
+                # whose generator raised to half the order equals -1.
                 f_pos = current_evals[j]           # f(d)
-                f_neg = current_evals[j + half]    # f(−d)
+                f_neg = current_evals[j + half]    # f(-d)
                 d = current_domain[j]
 
                 # FRI folding formula:
-                #   f_even = (f(d) + f(−d)) / 2
-                #   f_odd  = (f(d) − f(−d)) / (2d)
-                #   f'(d²) = f_even + α · f_odd
+                #   f_even = (f(d) + f(-d)) / 2
+                #   f_odd  = (f(d) - f(-d)) / (2d)
+                #   f'(d²) = f_even + a · f_odd
                 f_even = (f_pos + f_neg) / two
                 f_odd = (f_pos - f_neg) / (two * d)
                 new_evals.append(f_even + alpha * f_odd)

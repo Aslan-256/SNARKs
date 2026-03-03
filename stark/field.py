@@ -1,5 +1,5 @@
 """
-snarks.field – Finite-field arithmetic for zk-STARKs.
+snarks.field - Finite-field arithmetic for zk-STARKs.
 
 Mathematical background
 -----------------------
@@ -30,7 +30,7 @@ from typing import Any, Iterator
 
 
 # ---------------------------------------------------------------------------
-# Abstract base class – swap this to change the underlying field
+# Abstract base class - swap this to change the underlying field
 # ---------------------------------------------------------------------------
 
 class BaseField(abc.ABC):

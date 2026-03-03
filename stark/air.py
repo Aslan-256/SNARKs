@@ -1,5 +1,5 @@
 """
-snarks.air – Algebraic Intermediate Representation (AIR).
+snarks.air - Algebraic Intermediate Representation (AIR).
 
 Mathematical background
 -----------------------
@@ -14,8 +14,8 @@ Execution trace
 Transition constraints
     Polynomial relations that must hold between consecutive rows.  For a
     Fibonacci-like computation with one register the constraint is:
-        T(i+2) = T(i+1) + T(i)     for i = 0, …, n−3
-    or equivalently  T(i+2) − T(i+1) − T(i) = 0.
+        T(i+2) = T(i+1) + T(i)     for i = 0, …, n-3
+    or equivalently  T(i+2) - T(i+1) - T(i) = 0.
 
 Boundary constraints
     Values that specific registers must hold at specific rows.
@@ -24,6 +24,10 @@ Boundary constraints
 In the STARK pipeline the prover interpolates each trace column as a
 polynomial over a subgroup, then shows that the constraint polynomial
 is divisible by the "zerofier" of the relevant domain.
+
+AIR is crucial for modern zero-knowledge virtual machines (zkVMs) and 
+verifiable ML, where it helps prove that a computational graph or program 
+was executed correctly. 
 
 This module provides an abstract base class ``AIR`` and a concrete
 ``FibonacciAIR`` that constrains a single-register Fibonacci sequence.
@@ -34,8 +38,8 @@ from __future__ import annotations
 import abc
 from typing import Dict, List, Tuple
 
-from snarks.field import FieldElement, PrimeField, STARK_PRIME
-from snarks.polynomial import Polynomial, interpolate, zerofier_on_subgroup
+from stark.field import FieldElement, PrimeField, STARK_PRIME
+from stark.polynomial import Polynomial, interpolate, zerofier_on_subgroup
 
 
 class AIR(abc.ABC):
@@ -100,7 +104,7 @@ class AIR(abc.ABC):
     ) -> List[Polynomial]:
         """
         For each boundary constraint, compute:
-            ( trace_poly(x) − value ) / ( x − omega^step )
+            ( trace_poly(x) - value ) / ( x - omega^step )
         and return them as polynomials.
         """
         ...
@@ -117,7 +121,7 @@ class FibonacciAIR(AIR):
     The trace has **one register** and ``n`` rows.  The boundary constraints
     pin the first two values (a_0, a_1).  The transition constraint is:
 
-        f(g^{i+2} · x) − f(g^{i+1} · x) − f(g^i · x) = 0
+        f(g^{i+2} · x) - f(g^{i+1} · x) - f(g^i · x) = 0
 
     which, when evaluated on the trace subgroup, encodes the Fibonacci rule.
 
@@ -126,7 +130,10 @@ class FibonacciAIR(AIR):
     a0, a1 : int
         Starting values of the Fibonacci sequence.
     num_steps : int
-        Length of the trace.  **Must** be a power of 2.
+        Length of the trace.  **Must** be a power of 2 (as the prover will 
+        interpolate polynomials over a subgroup of this size).
+    prime : int
+        The prime modulus for the field.  Default is the STARK prime.
     """
 
     def __init__(
@@ -184,12 +191,12 @@ class FibonacciAIR(AIR):
     ) -> List[Polynomial]:
         """
         Build the transition constraint polynomial:
-            C(x) = f(g² · x) − f(g · x) − f(x)
+            C(x) = f(g² · x) - f(g · x) - f(x)
 
         where f is the trace polynomial interpolated over the subgroup
         {1, g, g², …, g^{n-1}} and g = subgroup_gen.
 
-        C(x) should vanish for x = g^i  with i = 0, …, n−3.
+        C(x) should vanish for x = g^i  with i = 0, …, n-3.
 
         Instead of symbolically composing f(g·x) — which is expensive —
         we evaluate f on the shifted domain directly and interpolate.
@@ -204,7 +211,7 @@ class FibonacciAIR(AIR):
         # Evaluate f on the subgroup (these are just the trace values).
         f_vals = f.evaluate_domain(domain)
 
-        # Build C(x) evaluations:  C(omega^i) = f_{i+2} − f_{i+1} − f_i
+        # Build C(x) evaluations:  C(omega^i) = f_{i+2} - f_{i+1} - f_i
         # for i in [0, n-1].  Indices wrap around modulo n (the polynomial
         # identity is valid everywhere but we will divide out the zerofier).
         c_vals: List[FieldElement] = []
@@ -219,9 +226,9 @@ class FibonacciAIR(AIR):
 
     def transition_zerofier(self, field: PrimeField) -> Polynomial:
         """
-        The transition constraint must hold at rows 0 through n−3.
+        The transition constraint must hold at rows 0 through n-3.
         The zerofier is:
-            Z_T(x) = (x^n − 1) / ((x − g^{n-2}) · (x − g^{n-1}))
+            Z_T(x) = (x^n - 1) / ((x - g^{n-2}) · (x - g^{n-1}))
 
         i.e. it vanishes on {g^0, …, g^{n-3}} but NOT on the last two rows.
         We compute this by polynomial division.
@@ -230,10 +237,10 @@ class FibonacciAIR(AIR):
         g = field.get_subgroup_generator(n)
         one = field.one()
 
-        # Full subgroup zerofier  x^n − 1
+        # Full subgroup zerofier  x^n - 1
         z_full = zerofier_on_subgroup(n, self.prime)
 
-        # Exclude the last two points:  (x − g^{n-2})(x − g^{n-1})
+        # Exclude the last two points:  (x - g^{n-2})(x - g^{n-1})
         gn2 = g ** (n - 2)
         gn1 = g ** (n - 1)
         exclusion = Polynomial([-gn2, one]) * Polynomial([-gn1, one])
@@ -251,7 +258,7 @@ class FibonacciAIR(AIR):
     ) -> List[Polynomial]:
         """
         For each boundary constraint  (reg, step, val):
-            quotient_i(x) = (f_{reg}(x) − val) / (x − omega^{step})
+            quotient_i(x) = (f_{reg}(x) - val) / (x - omega^{step})
 
         Returns the list of quotient polynomials.
         """
@@ -259,9 +266,9 @@ class FibonacciAIR(AIR):
         quotients: List[Polynomial] = []
         for reg, step, val in self.boundary_constraints():
             f = trace_polys[reg]
-            # Numerator:  f(x) − val
+            # Numerator:  f(x) - val
             numerator = f - Polynomial([val])
-            # Denominator:  x − omega^{step}
+            # Denominator:  x - omega^{step}
             point = subgroup_gen ** step
             denominator = Polynomial([-point, one])
             q, r = numerator.divmod(denominator)
