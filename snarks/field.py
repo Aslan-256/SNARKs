@@ -3,19 +3,19 @@ snarks.field – Finite-field arithmetic for zk-STARKs.
 
 Mathematical background
 -----------------------
-A **prime field** F_p is the set {0, 1, …, p−1} equipped with addition and
+A **prime field** F_p is the set {0, 1, …, p-1} equipped with addition and
 multiplication modulo a prime *p*.  Every non-zero element has a unique
 multiplicative inverse (by Fermat's little theorem: a^{-1} = a^{p-2} mod p).
 
 For STARKs we need a field whose multiplicative group contains large
 two-power-order subgroups so that Number Theoretic Transforms (NTTs) can run
-efficiently.  The classic "Goldilocks" prime  p = 2^{64} − 2^{32} + 1  is one
+efficiently.  The classic "Goldilocks" prime  p = 2^{64} - 2^{32} + 1  is one
 such choice, but for *pedagogical simplicity* we use a slightly smaller prime
 
     p = 3 * 2^30 + 1  =  3221225473
 
-whose multiplicative group has order  p − 1 = 3 · 2^30.  This gives us
-subgroups of order 2^k for every k ≤ 30 — more than enough for our toy
+whose multiplicative group has order  p - 1 = 3 · 2^30.  This gives us
+subgroups of order 2^k for every k ≤ 30 - more than enough for our toy
 examples.
 
 The module is designed around an **Abstract Base Class** `BaseField` so that
@@ -86,7 +86,7 @@ class BaseField(abc.ABC):
 # Prime chosen so that the multiplicative group has a large 2-adic subgroup.
 STARK_PRIME: int = 3 * (1 << 30) + 1  # 3221225473
 
-# A generator of the full multiplicative group F_p^*  (order p − 1).
+# A generator of the full multiplicative group F_p^*  (order p - 1).
 GENERATOR: int = 5  # 5 is a primitive root mod STARK_PRIME
 
 
@@ -127,8 +127,8 @@ class PrimeField:
         """
         Return an element whose multiplicative order is exactly *order*.
 
-        *order* **must** divide p − 1.  We obtain it by raising the
-        primitive root to the power  (p − 1) / order.
+        *order* **must** divide p - 1.  We obtain it by raising the
+        primitive root to the power  (p - 1) / order.
         """
         assert (self.prime - 1) % order == 0, (
             f"Requested order {order} does not divide p-1 = {self.prime - 1}"
