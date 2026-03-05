@@ -35,6 +35,7 @@ num_queries : int
 
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
@@ -111,11 +112,39 @@ class StarkProver:
         """Execute the full STARK proof generation."""
         field = self.field
         n = self.air.trace_length()              # trace size (power of 2)
+        n_exec = self.air.execution_trace_length()  # actual computation rows
         lde_size = n * self.blowup               # evaluation domain size
 
         # ---- Step 0: trace generation -------------------------------------
         trace_columns = self.air.generate_trace()
         num_registers = self.air.num_registers()
+
+        # ---- Step 0.5: Zero-knowledge blinding (trace padding) -----------
+        # When the AIR has been configured with randomizer rows
+        # (num_randomizers > 0), we append cryptographically secure random
+        # field elements to each trace column.  These random rows increase
+        # the degree of the interpolated trace polynomial, injecting
+        # ``num_randomizers`` independent random coefficients that act as
+        # *mathematical static*: evaluations of the trace polynomial at
+        # the verifier’s query points are uniformly distributed conditioned
+        # on the execution trace, so no information about the secret
+        # witness leaks.
+        #
+        # Requirement: num_randomizers > num_queries.  This guarantees that
+        # even after observing all query responses the verifier cannot
+        # solve for the execution trace values via polynomial interpolation.
+        num_padding = n - n_exec
+        if num_padding > 0:
+            assert num_padding > self.num_queries, (
+                f"For zero-knowledge, the number of padding rows "
+                f"({num_padding}) must strictly exceed num_queries "
+                f"({self.num_queries}).  Increase num_randomizers."
+            )
+            for col in trace_columns:
+                for _ in range(num_padding):
+                    col.append(
+                        FieldElement(secrets.randbelow(self.prime), self.prime)
+                    )
 
         # ---- Step 1: interpolate trace on the trace subgroup ---------------
         # The trace subgroup is the unique multiplicative subgroup of order n.

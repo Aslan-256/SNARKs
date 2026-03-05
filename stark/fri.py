@@ -5,7 +5,7 @@ Mathematical background
 -----------------------
 The **FRI** protocol is the heart of STARK soundness.  Given a committed
 vector of field-element evaluations, FRI convinces a verifier that the
-underlying function is "close" to a polynomial of degree < D — i.e. that the
+underlying function is "close" to a polynomial of degree < D - i.e. that the
 evaluations sit on (or very near) a low-degree polynomial.
 
 The protocol works in **rounds**.  In each round the current polynomial
@@ -17,7 +17,7 @@ by a random verifier challenge a:
 where f(x) = f_even(x²) + x · f_odd(x²).
 
 Geometrically, the evaluation domain (a multiplicative coset) is *squared*
-in each round, mapping  {d, -d}  pairs to the same point d²  — which is why
+in each round, mapping  {d, -d}  pairs to the same point d²  - which is why
 the folded evaluation domain is half the size.
 
 After O(log D) rounds the degree bound reaches a small constant and the
@@ -292,7 +292,7 @@ class FRIProtocol:
             If provided, the channel **continues** from whatever state the
             caller has already built (e.g. the STARK layer feeds trace and
             composition commitments before calling FRI).  If *None*, a fresh
-            channel is created — suitable for standalone FRI verification.
+            channel is created - suitable for standalone FRI verification.
 
         Returns True if all checks pass.
         """

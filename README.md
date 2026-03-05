@@ -269,6 +269,114 @@ everything checks out, the proof is accepted.
 
 ---
 
+## Zero-Knowledge Property via Trace Padding
+
+### The Problem: Witness Leakage
+
+A "plain" STARK (without blinding) achieves **succinctness** and
+**soundness**, but the proof transcript can leak information about the
+secret execution trace (**witness**).  During the FRI query phase the
+verifier learns evaluations of the trace polynomial at randomly chosen
+points.  Because the trace polynomial is uniquely determined by its
+evaluations on the trace subgroup (which are exactly the witness values),
+a verifier performing enough queries could, in principle, recover the
+trace by polynomial interpolation.
+
+More formally, assume the execution trace has *n* rows and is interpolated
+as a polynomial *f(x)* of degree < *n*.  The polynomial *f* is fully
+determined by any *n* distinct evaluations.  If the number of FRI queries
+*q ≥ n*, the verifier obtains enough points to reconstruct *f* — and with
+it the entire witness.
+
+### The Solution: Randomized Blinding Rows
+
+We achieve the **zero-knowledge** property by appending **k
+cryptographically random rows** to the execution trace before polynomial
+interpolation.  Concretely:
+
+1. The prover executes the computation (e.g. Fibonacci), producing an
+   execution trace of **n_exec** rows.
+2. The prover appends **k** field elements drawn independently and
+   uniformly at random from **F_p** using a cryptographically secure
+   random number generator (`secrets.randbelow`).
+3. The combined trace (execution + random padding) is interpolated over a
+   multiplicative subgroup of order **n = 2^m ≥ n_exec + k** (the
+   smallest power of 2 that fits).
+
+The resulting trace polynomial *f(x)* now has degree < *n*, which is
+strictly larger than the original degree < *n_exec*.  The extra *k* random
+evaluation points inject *k* independent random degrees of freedom into
+the polynomial's coefficient vector.
+
+### Why It Works — Information-Theoretic Argument
+
+**Theorem.**  If **k > q** (the number of random blinding rows strictly
+exceeds the number of FRI queries), then for any fixed execution trace
+the conditional distribution of the verifier's view — the *q* evaluations
+of *f* at the queried points — is **statistically uniform** over **F_p^q**,
+regardless of the particular witness.
+
+*Sketch of proof.*  Fix the *n_exec* execution-trace values.  The *k*
+random padding values are chosen uniformly and independently over **F_p**.
+The polynomial *f* is the unique interpolant of all *n* points.  Its
+coefficients are an affine function of the *k* random values (the
+execution values contribute a fixed offset).  Each query evaluation
+*f(z_j)* is therefore an affine function of the *k* random values.
+Because *q < k*, any subset of *q* such evaluations is a
+lower-dimensional affine image of a *k*-dimensional uniform distribution,
+and hence is itself uniformly distributed.  ∎
+
+In practice we set **k = num_queries + 1**, giving a margin of one degree
+of freedom.  Larger values increase the proof size only marginally (the
+padded trace length is rounded up to the next power of 2) while
+strengthening the statistical distance guarantee.
+
+### Adjusting the Constraint System
+
+The random padding rows do **not** satisfy the AIR's transition
+constraints (they are arbitrary field elements, not Fibonacci values).
+The constraint system must therefore be adjusted:
+
+* **Transition zerofier** — The zerofier *Z_T(x)* is modified so that it
+  vanishes **only** on the execution rows where the recurrence holds:
+
+$$Z_T(x) \;=\; \frac{x^n - 1}{\displaystyle\prod_{i\,=\,n_{\text{exec}}-2}^{\,n-1}\!(x - g^i)}$$
+
+  The excluded set contains the last two execution rows (where the
+  recurrence cannot be evaluated because it looks two steps ahead) **plus**
+  all padding rows.  This ensures that the quotient
+  *C(x) / Z_T(x)* is a well-defined polynomial with zero remainder.
+
+* **Boundary constraints** — These pin specific execution rows (e.g.
+  *f(g^0) = a_0*, *f(g^1) = a_1*) and are unaffected by the padding
+  because the boundary zerofiers *(x − g^{step})* do not involve the
+  padded rows.
+
+* **Composition polynomial** — The degree of the composition polynomial
+  increases from roughly *n_exec* to roughly *n*, but the FRI degree
+  bound is adjusted automatically.  The LDE domain (size
+  *blowup × n*) remains much larger, so soundness is preserved.
+
+### Usage
+
+```python
+from snarks import FibonacciAIR, StarkProver, StarkVerifier
+
+num_queries = 16
+
+# num_randomizers must be > num_queries for zero-knowledge.
+air = FibonacciAIR(a0=1, a1=1, num_steps=8, num_randomizers=num_queries + 1)
+
+prover = StarkProver(air, blowup_factor=8, num_queries=num_queries)
+proof = prover.prove()
+
+verifier = StarkVerifier(air, blowup_factor=8, num_queries=num_queries)
+assert verifier.verify(proof)
+print("zk-STARK proof verified!")
+```
+
+---
+
 ## License
 
 MIT - see [LICENSE](LICENSE).

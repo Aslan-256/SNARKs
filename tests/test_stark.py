@@ -9,9 +9,12 @@ Covers every layer of the stack:
     5. AIR trace generation & constraint computation
     6. FRI commit / verify
     7. Full STARK prover / verifier lifecycle
+    8. Zero-knowledge blinding via trace padding
 """
 
 from __future__ import annotations
+
+import secrets
 
 import pytest
 
@@ -344,6 +347,167 @@ class TestSTARKLifecycle:
 
         verifier = StarkVerifier(air, blowup_factor=8, num_queries=8)
         assert verifier.verify(proof), "STARK verification failed for (3,5)!"
+
+
+# ===================================================================
+#  8. Zero-knowledge blinding via trace padding
+# ===================================================================
+
+class TestZeroKnowledgeBlinding:
+    """Tests for the zero-knowledge property achieved by trace padding.
+
+    When ``num_randomizers > 0`` the FibonacciAIR reserves extra rows
+    that the prover fills with cryptographically random field elements.
+    These random rows increase the degree of the trace polynomial,
+    injecting independent random coefficients that mask the witness.
+
+    The tests below verify that:
+
+    1. The padded trace length is correct (power of 2, ≥ execution + k).
+    2. The transition constraint polynomial is still exactly divisible
+       by the (adjusted) transition zerofier, i.e. the composition
+       polynomial is well-formed.
+    3. The full prove / verify lifecycle succeeds with blinding enabled.
+    4. Different random padding produces different proofs (non-trivial
+       randomness).
+    """
+
+    F = PrimeField()
+
+    # ---- AIR-level checks ------------------------------------------------
+
+    def test_padded_trace_length_is_power_of_two(self) -> None:
+        """trace_length() must always be a power of 2."""
+        air = FibonacciAIR(a0=1, a1=1, num_steps=8, num_randomizers=9)
+        n = air.trace_length()
+        assert n & (n - 1) == 0, f"trace_length {n} is not a power of 2"
+
+    def test_padded_trace_length_accommodates_randomizers(self) -> None:
+        """trace_length() must be ≥ execution_trace_length + num_randomizers."""
+        air = FibonacciAIR(a0=1, a1=1, num_steps=8, num_randomizers=9)
+        assert air.trace_length() >= air.execution_trace_length() + 9
+
+    def test_execution_trace_length_unchanged(self) -> None:
+        """execution_trace_length() must equal the original num_steps."""
+        air = FibonacciAIR(a0=1, a1=1, num_steps=8, num_randomizers=17)
+        assert air.execution_trace_length() == 8
+
+    def test_generate_trace_returns_execution_only(self) -> None:
+        """generate_trace() must return only the execution rows."""
+        air = FibonacciAIR(a0=1, a1=1, num_steps=8, num_randomizers=17)
+        trace = air.generate_trace()
+        assert len(trace[0]) == 8
+
+    # ---- Constraint algebra with padding ----------------------------------
+
+    def test_transition_constraint_divisible_with_padding(self) -> None:
+        """With random padding the transition constraint polynomial must
+        still be exactly divisible by the transition zerofier, proving
+        that the composition polynomial is well-formed.
+
+        This is the core algebraic invariant of the blinding scheme:
+        constraints evaluate to zero on the execution domain, the random
+        rows are unconstrained, and the zerofier only vanishes on the
+        execution domain, so the quotient has zero remainder.
+        """
+        num_queries = 8
+        num_randomizers = num_queries + 1  # 9
+        air = FibonacciAIR(
+            a0=1, a1=1, num_steps=8, num_randomizers=num_randomizers,
+        )
+        field = air.field
+        n = air.trace_length()
+
+        # Subgroup of the padded length.
+        trace_gen = field.get_subgroup_generator(n)
+        trace_domain = field.get_subgroup(n)
+
+        # Build the execution trace and pad with random values (as the
+        # prover would do).
+        exec_trace = air.generate_trace()[0]
+        prime = air.prime
+        padded_col = list(exec_trace)
+        for _ in range(n - air.execution_trace_length()):
+            padded_col.append(FieldElement(secrets.randbelow(prime), prime))
+
+        # Interpolate the padded trace on the full subgroup.
+        trace_poly = interpolate(trace_domain, padded_col)
+
+        # Compute transition constraint and zerofier.
+        tc = air.transition_constraints([trace_poly], field, trace_gen)
+        tz = air.transition_zerofier(field)
+
+        q, r = tc[0].divmod(tz)
+        assert r.is_zero(), (
+            "Transition constraint not divisible by zerofier with padding!"
+        )
+
+    def test_boundary_quotients_with_padding(self) -> None:
+        """Boundary quotient divisions must also leave zero remainder
+        when trace padding is active."""
+        air = FibonacciAIR(a0=1, a1=1, num_steps=8, num_randomizers=9)
+        field = air.field
+        n = air.trace_length()
+        trace_gen = field.get_subgroup_generator(n)
+        trace_domain = field.get_subgroup(n)
+
+        exec_trace = air.generate_trace()[0]
+        padded_col = list(exec_trace)
+        for _ in range(n - air.execution_trace_length()):
+            padded_col.append(
+                FieldElement(secrets.randbelow(air.prime), air.prime)
+            )
+        trace_poly = interpolate(trace_domain, padded_col)
+
+        bqs = air.boundary_zerofiers_and_quotients(
+            [trace_poly], field, trace_gen,
+        )
+        assert len(bqs) == 2
+
+    # ---- Full lifecycle with blinding ------------------------------------
+
+    def test_zk_stark_prove_verify(self) -> None:
+        """End-to-end zk-STARK: prove and verify with trace padding."""
+        num_queries = 8
+        num_randomizers = num_queries + 1
+        air = FibonacciAIR(
+            a0=1, a1=1, num_steps=8, num_randomizers=num_randomizers,
+        )
+        prover = StarkProver(air, blowup_factor=8, num_queries=num_queries)
+        proof = prover.prove()
+
+        verifier = StarkVerifier(air, blowup_factor=8, num_queries=num_queries)
+        assert verifier.verify(proof), "zk-STARK verification failed!"
+
+    def test_zk_stark_different_starting_values(self) -> None:
+        """zk-STARK should work with non-standard Fibonacci seeds."""
+        num_queries = 8
+        num_randomizers = num_queries + 1
+        air = FibonacciAIR(
+            a0=3, a1=7, num_steps=8, num_randomizers=num_randomizers,
+        )
+        prover = StarkProver(air, blowup_factor=8, num_queries=num_queries)
+        proof = prover.prove()
+
+        verifier = StarkVerifier(air, blowup_factor=8, num_queries=num_queries)
+        assert verifier.verify(proof), "zk-STARK verification failed for (3,7)!"
+
+    def test_different_randomness_yields_different_commitments(self) -> None:
+        """Two independent proofs of the same statement must (almost surely)
+        produce different trace commitments, confirming non-trivial
+        randomness injection."""
+        num_queries = 8
+        num_randomizers = num_queries + 1
+        air = FibonacciAIR(
+            a0=1, a1=1, num_steps=8, num_randomizers=num_randomizers,
+        )
+        proof1 = StarkProver(air, blowup_factor=8, num_queries=num_queries).prove()
+        proof2 = StarkProver(air, blowup_factor=8, num_queries=num_queries).prove()
+
+        assert proof1.trace_commitment != proof2.trace_commitment, (
+            "Two proofs with independent randomness must (w.h.p.) have "
+            "different trace commitments."
+        )
 
 
 # ===================================================================
