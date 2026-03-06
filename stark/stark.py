@@ -156,6 +156,47 @@ class StarkProver:
             poly = interpolate(trace_domain, col)
             trace_polys.append(poly)
 
+        # ---- Step 1.5: Blinding polynomial --------------------------------
+        # When zero-knowledge blinding is active (num_padding > 0) we
+        # construct a **blinding polynomial** B(X) for each trace column
+        # and compute:
+        #
+        #     f_blinded(X) = f(X) + B(X) · Z_trace(X)
+        #
+        # where  Z_trace(X) = X^n − 1  is the zerofier of the full trace
+        # subgroup.  Because  Z_trace  vanishes on every element of the
+        # subgroup,  f_blinded  *agrees with f* at every trace point:
+        #
+        #     f_blinded(ω^i) = f(ω^i) + B(ω^i) · 0 = f(ω^i)
+        #
+        # All boundary and transition constraints therefore hold
+        # unchanged.  Outside the subgroup — in particular on the LDE
+        # evaluation domain (a disjoint coset) — the product B(X)·Z(X)
+        # is non-zero and acts as cryptographic masking.
+        #
+        # The degree of B is set to  num_queries  so that the blinding
+        # term contributes at least  num_queries + 1  independent random
+        # coefficients.  This ensures the mask acts as a **one-time pad**
+        # over the verifier's spot-check queries: with  deg(B) ≥ q  the
+        # conditional distribution of any  q  evaluations of f_blinded
+        # (given the execution trace) is statistically uniform.
+        #
+        # Degree analysis:
+        #   deg(f_blinded) = n + deg(B) = n + num_queries
+        # This is larger than deg(f) < n, which cascades to a higher-
+        # degree composition polynomial.  The FRI degree bound is
+        # computed from the *actual* composition polynomial degree
+        # (see Step 5), so it automatically accounts for the increase.
+        if num_padding > 0:
+            z_trace = self.air.trace_domain_zerofier(field)
+            blinded_polys: List[Polynomial] = []
+            for poly in trace_polys:
+                b = Polynomial.random(self.num_queries, self.prime)
+                blinded = poly + b * z_trace
+                blinded_polys.append(blinded)
+        else:
+            blinded_polys = list(trace_polys)
+
         # ---- Step 2: Low-Degree Extension (LDE) ---------------------------
         # We evaluate the trace polynomial on a *different*, larger coset to
         # get Reed-Solomon-like redundancy.  We use an offset (coset shift)
@@ -179,9 +220,12 @@ class StarkProver:
             lde_domain.append(offset * power)
             power = power * lde_gen
 
-        # Evaluate trace polynomials on the LDE domain.
+        # Evaluate *blinded* trace polynomials on the LDE domain.
+        # The prover commits to  f_blinded(X)  — **not** the raw  f(X) —
+        # so that opened evaluations on the LDE domain are masked by the
+        # blinding term  B(X) · Z_trace(X).
         trace_lde: List[List[FieldElement]] = []
-        for poly in trace_polys:
+        for poly in blinded_polys:
             trace_lde.append(poly.evaluate_domain(lde_domain))
 
         # Commit to the trace LDE via Merkle tree.
@@ -209,12 +253,18 @@ class StarkProver:
 
         # ---- Step 3: Constraint composition --------------------------------
         # Build boundary and transition quotient polynomials.
+        # We pass  blinded_polys  (not the raw trace_polys) so that the
+        # constraint quotients are expressed in terms of the *committed*
+        # polynomial.  Because  f_blinded = f  on the trace subgroup, the
+        # boundary and transition constraints still hold — the quotients
+        # have zero remainder.  However the quotient *degrees* are higher
+        # (≈ n + num_queries) since f_blinded has a larger degree.
         boundary_quotients = self.air.boundary_zerofiers_and_quotients(
-            trace_polys, field, trace_gen,
+            blinded_polys, field, trace_gen,
         )
 
         transition_constraints = self.air.transition_constraints(
-            trace_polys, field, trace_gen,
+            blinded_polys, field, trace_gen,
         )
         transition_zerofier = self.air.transition_zerofier(field)
 
@@ -244,6 +294,12 @@ class StarkProver:
         # ---- Step 5: FRI on the composition polynomial ---------------------
         # The composition polynomial should have degree < n (roughly), so
         # FRI proves proximity to that degree bound.
+        # When blinding is active the blinded trace polynomial has degree
+        # n + num_queries, which cascades through the constraint quotients
+        # into a composition polynomial of degree ≈ n + num_queries − 1.
+        # The max_degree computation below uses the *actual* polynomial
+        # degree, so the FRI bound is always correct regardless of
+        # whether blinding is enabled.
         max_degree = max(composition_poly.degree, 0)
         # Round up to a power of 2 minus 1 for cleaner FRI.
         fri_degree_bound = 1

@@ -511,6 +511,196 @@ class TestZeroKnowledgeBlinding:
 
 
 # ===================================================================
+#  9. Blinding polynomial (f_blinded = f + B · Z_trace)
+# ===================================================================
+
+class TestBlindingPolynomial:
+    """Tests for the blinding-polynomial zero-knowledge mechanism.
+
+    In addition to trace padding, the prover constructs a random
+    polynomial  B(X)  and computes:
+
+        f_blinded(X) = f(X) + B(X) · Z_trace(X)
+
+    where  Z_trace(X) = X^n − 1  is the zerofier of the trace subgroup.
+    Because  Z_trace  vanishes on the subgroup,  f_blinded  agrees with
+    f  at every trace point, so all constraints hold.  Outside the
+    subgroup the blinding term masks evaluations of f.
+
+    The tests verify:
+    1. ``Polynomial.random`` produces the correct degree with a
+       non-zero leading coefficient.
+    2. ``Polynomial.shift`` correctly computes  f(α · x).
+    3. The blinded polynomial preserves boundary constraints on the
+       trace subgroup.
+    4. The transition constraint polynomial built from  f_blinded  is
+       exactly divisible by the transition zerofier.
+    5. The full STARK prove / verify lifecycle succeeds with the
+       blinding-polynomial path active.
+    """
+
+    F = PrimeField()
+
+    # ---- Polynomial helpers -----------------------------------------------
+
+    def test_polynomial_random_degree(self) -> None:
+        """Polynomial.random(d) must return a polynomial of exactly degree d."""
+        for d in (0, 1, 5, 12):
+            p = Polynomial.random(d, STARK_PRIME)
+            assert p.degree == d, f"Expected degree {d}, got {p.degree}"
+
+    def test_polynomial_random_leading_nonzero(self) -> None:
+        """The leading coefficient of a random polynomial must be non-zero."""
+        p = Polynomial.random(8, STARK_PRIME)
+        assert not p.coeffs[-1].is_zero()
+
+    def test_polynomial_shift_correctness(self) -> None:
+        """f.shift(α) must satisfy  f.shift(α).evaluate(x) == f(α·x)."""
+        f = Polynomial.from_ints([3, 1, 4, 1, 5])  # 3 + x + 4x² + x³ + 5x⁴
+        alpha = self.F(7)
+        f_shifted = f.shift(alpha)
+        # Check at several random points.
+        for x_int in (0, 1, 2, 42, 999):
+            x = self.F(x_int)
+            assert f_shifted.evaluate(x) == f.evaluate(alpha * x)
+
+    # ---- Blinding preserves constraints -----------------------------------
+
+    def test_blinded_trace_agrees_on_subgroup(self) -> None:
+        """f_blinded must equal f at every point of the trace subgroup."""
+        air = FibonacciAIR(a0=1, a1=1, num_steps=8, num_randomizers=9)
+        field = air.field
+        n = air.trace_length()
+        domain = field.get_subgroup(n)
+
+        # Build padded trace and interpolate.
+        exec_trace = air.generate_trace()[0]
+        padded = list(exec_trace) + [
+            FieldElement(secrets.randbelow(air.prime), air.prime)
+            for _ in range(n - air.execution_trace_length())
+        ]
+        f = interpolate(domain, padded)
+
+        # Blind.
+        z_trace = air.trace_domain_zerofier(field)
+        b = Polynomial.random(8, air.prime)
+        f_blinded = f + b * z_trace
+
+        # f_blinded must agree with f on the subgroup.
+        for pt in domain:
+            assert f_blinded.evaluate(pt) == f.evaluate(pt)
+
+    def test_blinded_transition_constraint_divisible(self) -> None:
+        """The transition constraint polynomial built from f_blinded
+        must be exactly divisible by the transition zerofier, confirming
+        that the composition polynomial is well-formed even after
+        blinding.
+
+        This is the core algebraic invariant:
+            C_blinded(x) = f_blinded(g²x) − f_blinded(gx) − f_blinded(x)
+        is divisible by Z_T(x) because:
+          1. C_blinded = C(x) + D(x) · Z_trace(x)
+          2. Z_T divides both C(x) and Z_trace(x).
+        """
+        num_queries = 8
+        num_randomizers = num_queries + 1
+        air = FibonacciAIR(
+            a0=1, a1=1, num_steps=8, num_randomizers=num_randomizers,
+        )
+        field = air.field
+        n = air.trace_length()
+        trace_gen = field.get_subgroup_generator(n)
+        trace_domain = field.get_subgroup(n)
+
+        # Build padded trace, interpolate, then blind.
+        exec_trace = air.generate_trace()[0]
+        padded = list(exec_trace) + [
+            FieldElement(secrets.randbelow(air.prime), air.prime)
+            for _ in range(n - air.execution_trace_length())
+        ]
+        f = interpolate(trace_domain, padded)
+
+        z_trace = air.trace_domain_zerofier(field)
+        b = Polynomial.random(num_queries, air.prime)
+        f_blinded = f + b * z_trace
+
+        # Build transition constraint from the blinded polynomial.
+        tc_list = air.transition_constraints([f_blinded], field, trace_gen)
+        tz = air.transition_zerofier(field)
+
+        q, r = tc_list[0].divmod(tz)
+        assert r.is_zero(), (
+            "Transition constraint from f_blinded not divisible by zerofier!"
+        )
+
+    def test_blinded_boundary_quotients_zero_remainder(self) -> None:
+        """Boundary quotient divisions with f_blinded must leave zero
+        remainder, since f_blinded = f on all boundary points."""
+        num_queries = 8
+        num_randomizers = num_queries + 1
+        air = FibonacciAIR(
+            a0=1, a1=1, num_steps=8, num_randomizers=num_randomizers,
+        )
+        field = air.field
+        n = air.trace_length()
+        trace_gen = field.get_subgroup_generator(n)
+        trace_domain = field.get_subgroup(n)
+
+        exec_trace = air.generate_trace()[0]
+        padded = list(exec_trace) + [
+            FieldElement(secrets.randbelow(air.prime), air.prime)
+            for _ in range(n - air.execution_trace_length())
+        ]
+        f = interpolate(trace_domain, padded)
+
+        z_trace = air.trace_domain_zerofier(field)
+        b = Polynomial.random(num_queries, air.prime)
+        f_blinded = f + b * z_trace
+
+        bqs = air.boundary_zerofiers_and_quotients(
+            [f_blinded], field, trace_gen,
+        )
+        assert len(bqs) == 2
+
+    # ---- Full lifecycle with blinding polynomial --------------------------
+
+    def test_blinding_polynomial_prove_verify(self) -> None:
+        """End-to-end zk-STARK with blinding polynomials active."""
+        num_queries = 8
+        num_randomizers = num_queries + 1
+        air = FibonacciAIR(
+            a0=1, a1=1, num_steps=8, num_randomizers=num_randomizers,
+        )
+        prover = StarkProver(air, blowup_factor=8, num_queries=num_queries)
+        proof = prover.prove()
+
+        verifier = StarkVerifier(air, blowup_factor=8, num_queries=num_queries)
+        assert verifier.verify(proof), (
+            "zk-STARK with blinding polynomials failed verification!"
+        )
+
+    def test_blinding_polynomial_different_seeds(self) -> None:
+        """Blinding polynomials must work with various Fibonacci seeds."""
+        for a0, a1 in [(2, 5), (7, 11), (0, 1)]:
+            num_queries = 8
+            num_randomizers = num_queries + 1
+            air = FibonacciAIR(
+                a0=a0, a1=a1, num_steps=8,
+                num_randomizers=num_randomizers,
+            )
+            prover = StarkProver(
+                air, blowup_factor=8, num_queries=num_queries,
+            )
+            proof = prover.prove()
+            verifier = StarkVerifier(
+                air, blowup_factor=8, num_queries=num_queries,
+            )
+            assert verifier.verify(proof), (
+                f"Blinding-polynomial proof failed for seeds ({a0}, {a1})!"
+            )
+
+
+# ===================================================================
 #  Standalone runner
 # ===================================================================
 

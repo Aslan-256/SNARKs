@@ -26,6 +26,7 @@ coefficient of x^i.  Trailing zeros are stripped to keep the degree canonical.
 
 from __future__ import annotations
 
+import secrets
 from typing import List, Optional, Sequence
 
 from stark.field import FieldElement, PrimeField, STARK_PRIME
@@ -91,6 +92,45 @@ class Polynomial:
     def from_ints(cls, values: Sequence[int], prime: int = STARK_PRIME) -> "Polynomial":
         """Convenience: build a polynomial from plain integers."""
         return cls([FieldElement(v, prime) for v in values])
+
+    @classmethod
+    def random(cls, degree: int, prime: int = STARK_PRIME) -> "Polynomial":
+        """
+        Generate a polynomial of the given *degree* whose coefficients are
+        drawn independently and uniformly from F_p using a
+        **cryptographically secure** random number generator
+        (``secrets.randbelow``).
+
+        This is used in the STARK prover to construct **blinding
+        polynomials** that mask the trace polynomial, providing the
+        zero-knowledge property.  A blinding polynomial B(X) of degree
+        *d* contributes *d + 1* independent random field elements; when
+        *d ≥ num_queries* the resulting mask acts as a one-time pad over
+        the verifier's spot-check queries.
+
+        Parameters
+        ----------
+        degree : int
+            The exact degree of the returned polynomial.  The leading
+            coefficient is guaranteed to be non-zero.
+        prime : int
+            The prime modulus of the underlying field.
+
+        Returns
+        -------
+        Polynomial
+            A random polynomial of the specified degree.
+        """
+        assert degree >= 0, "degree must be non-negative"
+        coeffs = [
+            FieldElement(secrets.randbelow(prime), prime)
+            for _ in range(degree + 1)
+        ]
+        # Ensure the leading coefficient is non-zero so that the
+        # degree is exactly as requested.
+        while coeffs[-1].is_zero():
+            coeffs[-1] = FieldElement(secrets.randbelow(prime), prime)
+        return cls(coeffs)
 
     # ----- evaluation ------------------------------------------------------
 
@@ -202,6 +242,27 @@ class Polynomial:
         return Polynomial(quotient), Polynomial(remainder)
 
     # ----- composition / shifting ------------------------------------------
+
+    def shift(self, alpha: FieldElement) -> "Polynomial":
+        """
+        Return the polynomial  f(alpha · x)  obtained by substituting  alpha·x
+        for  x.
+
+        If  f(x) = Σ_i c_i x^i  then  f(alpha·x) = Σ_i (c_i · alpha^i) x^i.
+
+        This is an O(degree) operation that avoids the expense of full
+        polynomial composition.  It is used to compute shifted trace
+        polynomials  f(g·x)  and  f(g²·x)  when building transition
+        constraints in coefficient form.
+        """
+        if not self.coeffs:
+            return Polynomial([])
+        result: List[FieldElement] = []
+        alpha_power = FieldElement(1, alpha.prime)  # α^0 = 1
+        for c in self.coeffs:
+            result.append(c * alpha_power)
+            alpha_power = alpha_power * alpha
+        return Polynomial(result)
 
     def compose(self, inner: "Polynomial") -> "Polynomial":
         """

@@ -274,32 +274,28 @@ class FibonacciAIR(AIR):
         where f is the trace polynomial interpolated over the subgroup
         {1, g, g², …, g^{n-1}} and g = subgroup_gen.
 
-        C(x) should vanish for x = g^i  with i = 0, …, n-3.
+        C(x) should vanish for x = g^i  with i = 0, …, n_exec-3.
 
-        Instead of symbolically composing f(g·x) - which is expensive -
-        we evaluate f on the shifted domain directly and interpolate.
+        Implementation note
+        -------------------
+        We compute f(g·x) and f(g²·x) via the **shift** operation on
+        coefficient vectors, which is O(degree).
+
+        If f(x) = Σ c_k x^k then f(g·x) = Σ c_k g^k x^k, i.e. each
+        coefficient c_k is multiplied by g^k.  This approach correctly
+        handles polynomials of any degree, including **blinded** trace
+        polynomials  f_blinded = f + B · Z_trace  whose degree exceeds
+        the subgroup order.
         """
         f = trace_polys[0]
-        n = self.trace_length()
-
-        # Get subgroup elements: omega^0, omega^1, …, omega^{n-1}
         g = subgroup_gen
-        domain = field.get_subgroup(n)
 
-        # Evaluate f on the subgroup (these are just the trace values).
-        f_vals = f.evaluate_domain(domain)
+        # f(g·x)  and  f(g²·x)  via coefficient scaling.
+        f_gx = f.shift(g)
+        f_g2x = f.shift(g * g)
 
-        # Build C(x) evaluations:  C(omega^i) = f_{i+2} - f_{i+1} - f_i
-        # for i in [0, n-1].  Indices wrap around modulo n (the polynomial
-        # identity is valid everywhere but we will divide out the zerofier).
-        c_vals: List[FieldElement] = []
-        for i in range(n):
-            c_vals.append(
-                f_vals[(i + 2) % n] - f_vals[(i + 1) % n] - f_vals[i]
-            )
-
-        # Interpolate C(x) from its evaluations on the subgroup.
-        c_poly = interpolate(domain, c_vals)
+        # C(x) = f(g²x) - f(gx) - f(x)
+        c_poly = f_g2x - f_gx - f
         return [c_poly]
 
     def transition_zerofier(self, field: PrimeField) -> Polynomial:
@@ -347,6 +343,31 @@ class FibonacciAIR(AIR):
         # Sanity: remainder should be zero
         assert remainder.is_zero(), "Transition zerofier division has non-zero remainder!"
         return z_transition
+
+    def trace_domain_zerofier(self, field: PrimeField) -> Polynomial:
+        """
+        Zerofier of the **full trace subgroup**:
+
+            Z_{trace}(x) = x^n − 1
+
+        where  n = trace_length()  (the order of the multiplicative
+        subgroup over which the trace polynomial is interpolated).
+
+        This polynomial vanishes at every element of the trace subgroup:
+        for any ω with ω^n = 1 we have Z(\u03c9) = 0.
+
+        It is used in the **blinding polynomial** construction:
+
+            f_blinded(x) = f(x) + B(x) · Z_{trace}(x)
+
+        Because  Z_{trace}  vanishes on the trace subgroup,  f_blinded
+        agrees with  f  at every trace point, so all polynomial
+        constraints (boundary and transition) continue to hold after
+        blinding.  Outside the subgroup (i.e. on the LDE evaluation
+        domain) the blinding term is non-zero, masking the witness.
+        """
+        n = self.trace_length()
+        return zerofier_on_subgroup(n, self.prime)
 
     def boundary_zerofiers_and_quotients(
         self,

@@ -357,6 +357,85 @@ $$Z_T(x) \;=\; \frac{x^n - 1}{\displaystyle\prod_{i\,=\,n_{\text{exec}}-2}^{\,n-
   bound is adjusted automatically.  The LDE domain (size
   *blowup × n*) remains much larger, so soundness is preserved.
 
+### Zero-Knowledge Property via Blinding Polynomials
+
+Trace padding alone provides zero-knowledge by injecting random
+degrees of freedom into the interpolated trace polynomial.  An
+alternative (and complementary) technique is to apply a **blinding
+polynomial** directly to the trace polynomial *after* interpolation.
+
+#### Construction
+
+After interpolating the trace column as a polynomial *f(X)* over the
+trace subgroup of order *n*, the prover:
+
+1. **Generates** a cryptographically secure random polynomial *B(X)* of
+   degree *d ≥ q* (the number of FRI queries), using
+   `secrets.randbelow` for each coefficient.
+2. **Computes** the trace-domain zerofier *Z_{\text{trace}}(X) = X^n − 1*.
+3. **Constructs** the blinded trace polynomial:
+
+$$f_{\text{blinded}}(X) \;=\; f(X) \;+\; B(X) \cdot Z_{\text{trace}}(X)$$
+
+#### Why It Preserves Constraints
+
+Because *Z_{\text{trace}}(X)* vanishes on every element of the trace
+subgroup (by definition, *ω^n = 1* for every *n*-th root of unity *ω*),
+we have:
+
+$$f_{\text{blinded}}(\omega^i) \;=\; f(\omega^i) + B(\omega^i) \cdot 0 \;=\; f(\omega^i) \quad \forall\, i$$
+
+Therefore:
+* **Boundary constraints** hold unchanged:
+  *f_{\text{blinded}}(g^0) = f(g^0) = a_0*, etc.
+* **Transition constraints** hold unchanged:
+  *f_{\text{blinded}}(g^{i+2}) − f_{\text{blinded}}(g^{i+1}) − f_{\text{blinded}}(g^i) = 0*
+  for all execution rows *i*.
+* The transition quotient *C_{\text{blinded}}(X) / Z_T(X)* is still a
+  well-defined polynomial with zero remainder, because *Z_T* divides
+  both *C(X)* (the original constraint) and *Z_{\text{trace}}(X)*.
+
+#### Why It Provides Zero-Knowledge
+
+Outside the trace subgroup — in particular on the LDE evaluation domain
+(a disjoint coset) — *Z_{\text{trace}}(X) ≠ 0*, so the blinding term
+*B(X) · Z_{\text{trace}}(X)* is non-zero and acts as cryptographic
+masking.
+
+The blinding polynomial *B(X)* of degree *d* contributes *d + 1*
+independent random coefficients.  When *d ≥ q* (the number of verifier
+queries), the conditional distribution of any *q* evaluations of
+*f_{\text{blinded}}* — given the execution trace — is statistically
+uniform over *F_p^q*.
+
+**Theorem (One-Time Pad).**  If *deg(B) ≥ q*, then for any fixed
+execution trace, the *q* query evaluations
+*{f_{\text{blinded}}(x_j)}_{j=1}^{q}* are jointly uniformly distributed
+over *F_p^q*, regardless of the witness.
+
+#### Degree Analysis
+
+The blinded polynomial has degree:
+
+$$\deg(f_{\text{blinded}}) = n + \deg(B) = n + q$$
+
+This cascades through the constraint quotients into a composition
+polynomial of degree ≈ *n + q − 1*.  The FRI degree bound is
+computed from the actual composition polynomial degree, so it
+automatically accounts for the increase.  The LDE domain (size
+*blowup × n*) still satisfies *blowup × n ≫ n + q*, so soundness
+is preserved.
+
+#### Combined with Trace Padding
+
+When both trace padding and blinding polynomials are active, the
+zero-knowledge guarantee is strengthened: the trace polynomial has
+random coefficients from padding, and the blinding polynomial adds
+an additional independent mask.  The two mechanisms are
+complementary — trace padding randomises the polynomial itself,
+while the blinding polynomial randomises its evaluations outside the
+subgroup.
+
 ### Usage
 
 ```python
